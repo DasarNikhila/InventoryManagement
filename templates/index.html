@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Inventory Management System</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+
+<!-- HEADER -->
+
+<div class="header">
+
+    <div class="logo">
+
+        <div class="logo-icon">
+            📦
+        </div>
+
+        <div>
+
+            <h1>Inventory Management</h1>
+
+            <p>Manage your products and stock easily</p>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<div class="container">
+
+
+    <!-- DASHBOARD -->
+
+    <div class="dashboard">
+
+        <div class="card">
+
+            <div class="card-icon">
+                📦
+            </div>
+
+            <div class="card-title">
+                Total Products
+            </div>
+
+            <div class="card-value">
+                {{ products|length }}
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-icon">
+                📊
+            </div>
+
+            <div class="card-title">
+                Total Stock
+            </div>
+
+            <div class="card-value">
+
+                {% set total_stock = namespace(value=0) %}
+
+                {% for product in products %}
+
+                    {% set total_stock.value =
+                    total_stock.value + product.quantity %}
+
+                {% endfor %}
+
+                {{ total_stock.value }}
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-icon">
+                ⚠️
+            </div>
+
+            <div class="card-title">
+                Low Stock
+            </div>
+
+            <div class="card-value">
+
+                {% set low_stock = namespace(value=0) %}
+
+                {% for product in products %}
+
+                    {% if product.quantity < 5 %}
+
+                        {% set low_stock.value =
+                        low_stock.value + 1 %}
+
+                    {% endif %}
+
+                {% endfor %}
+
+                {{ low_stock.value }}
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ADD PRODUCT -->
+
+    <div class="form-card">
+
+        <h2>➕ Add New Product</h2>
+
+        <form action="/add" method="POST">
+
+            <div class="form-grid">
+
+                <input
+                    type="text"
+                    name="name"
+                    placeholder="Product Name"
+                    required
+                >
+
+                <input
+                    type="text"
+                    name="category"
+                    placeholder="Category"
+                    required
+                >
+
+                <input
+                    type="number"
+                    name="price"
+                    placeholder="Price"
+                    required
+                >
+
+                <input
+                    type="number"
+                    name="quantity"
+                    placeholder="Quantity"
+                    required
+                >
+
+                <input
+                    type="text"
+                    name="supplier"
+                    placeholder="Supplier"
+                    required
+                >
+
+            </div>
+
+            <br>
+
+            <button type="submit">
+                + Add Product
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- INVENTORY -->
+
+    <div class="inventory-card">
+
+        <div class="inventory-header">
+
+            <h2>📋 Product Inventory</h2>
+
+            <input
+                class="search-box"
+                type="text"
+                id="search"
+                placeholder="🔍 Search products..."
+                onkeyup="searchProducts()"
+            >
+
+        </div>
+
+
+        <div class="table-container">
+
+            <table id="productTable">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Supplier</th>
+                        <th>Action</th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    {% for product in products %}
+
+                    <tr>
+
+                        <td class="product-name">
+                            {{ product.name }}
+                        </td>
+
+                        <td>
+                            <span class="category">
+                                {{ product.category }}
+                            </span>
+                        </td>
+
+                        <td>
+                            ₹{{ product.price }}
+                        </td>
+
+                        <td>
+
+                            {% if product.quantity < 5 %}
+
+                                <span class="stock-low">
+                                    ⚠ {{ product.quantity }} Low
+                                </span>
+
+                            {% else %}
+
+                                <span class="stock-good">
+                                    ✓ {{ product.quantity }} Available
+                                </span>
+
+                            {% endif %}
+
+                        </td>
+
+                        <td>
+                            {{ product.supplier }}
+                        </td>
+
+                        <td>
+
+                            <a
+                                class="action edit"
+                                href="/edit/{{ product._id }}"
+                            >
+                                ✏ Edit
+                            </a>
+
+                            <a
+                                class="action delete"
+                                href="/delete/{{ product._id }}"
+                                onclick="return confirm('Delete this product?')"
+                            >
+                                🗑 Delete
+                            </a>
+
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<div class="footer">
+
+    Inventory Management System • Powered by MongoDB
+
+</div>
+
+
+<script>
+
+function searchProducts() {
+
+    let input =
+        document.getElementById("search").value.toLowerCase();
+
+    let rows =
+        document
+        .getElementById("productTable")
+        .getElementsByTagName("tr");
+
+    for (let i = 1; i < rows.length; i++) {
+
+        let text =
+            rows[i].innerText.toLowerCase();
+
+        if (text.includes(input)) {
+
+            rows[i].style.display = "";
+
+        } else {
+
+            rows[i].style.display = "none";
+
+        }
+
+    }
+
+}
+
+</script>
+
+
+</body>
+
+</html>

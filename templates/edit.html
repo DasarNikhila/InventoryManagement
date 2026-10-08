@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Edit Product</title>
+
+</head>
+
+<body>
+
+    <h1>Edit Product</h1>
+
+
+    <form action="/update/{{ product._id }}"
+          method="POST">
+
+        <input
+            type="text"
+            name="name"
+            value="{{ product.name }}"
+            required
+        >
+
+        <input
+            type="text"
+            name="category"
+            value="{{ product.category }}"
+            required
+        >
+
+        <input
+            type="number"
+            name="price"
+            value="{{ product.price }}"
+            required
+        >
+
+        <input
+            type="number"
+            name="quantity"
+            value="{{ product.quantity }}"
+            required
+        >
+
+        <input
+            type="text"
+            name="supplier"
+            value="{{ product.supplier }}"
+            required
+        >
+
+        <button type="submit">
+            Update Product
+        </button>
+
+    </form>
+
+
+    <br>
+
+    <a href="/">
+        Back to Inventory
+    </a>
+
+</body>
+
+</html>
