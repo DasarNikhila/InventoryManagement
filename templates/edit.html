@@ -1,68 +1,48 @@
+
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-
-    <title>Edit Product</title>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Edit Product | Stockly</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
+<header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">Stockly<span class="brand-dot">.</span></a>
+    <a href="{{ url_for('index') }}" class="secondary-btn">← Dashboard</a>
+</header>
+<main class="container">
+    <section class="welcome">
+        <div><span class="eyebrow">PRODUCT MANAGEMENT</span>
+        <h1>Edit product<span class="brand-dot">.</span></h1>
+        <p>Change product details or set an exact quantity.</p></div>
+    </section>
 
-    <h1>Edit Product</h1>
-
-
-    <form action="/update/{{ product._id }}"
-          method="POST">
-
-        <input
-            type="text"
-            name="name"
-            value="{{ product.name }}"
-            required
-        >
-
-        <input
-            type="text"
-            name="category"
-            value="{{ product.category }}"
-            required
-        >
-
-        <input
-            type="number"
-            name="price"
-            value="{{ product.price }}"
-            required
-        >
-
-        <input
-            type="number"
-            name="quantity"
-            value="{{ product.quantity }}"
-            required
-        >
-
-        <input
-            type="text"
-            name="supplier"
-            value="{{ product.supplier }}"
-            required
-        >
-
-        <button type="submit">
-            Update Product
-        </button>
-
-    </form>
-
-
-    <br>
-
-    <a href="/">
-        Back to Inventory
-    </a>
-
+    <section class="panel edit-panel">
+        <h2>{{ product.name }}</h2>
+        <form action="{{ url_for('update_product', product_id=product._id) }}" method="POST" class="edit-form">
+            <label>Product name
+                <input name="name" value="{{ product.name }}" maxlength="100" required>
+            </label>
+            <label>Category
+                <input name="category" value="{{ product.category }}" maxlength="100" required>
+            </label>
+            <label>Unit price (₹)
+                <input name="price" type="number" value="{{ product.price }}" min="0" step="0.01" required>
+            </label>
+            <label>Quantity
+                <input name="quantity" type="number" value="{{ product.quantity }}" min="0" step="1" required>
+            </label>
+            <label class="full-width">Supplier
+                <input name="supplier" value="{{ product.supplier }}" maxlength="100" required>
+            </label>
+            <div class="full-width actions">
+                <button class="primary-btn" type="submit">Save changes</button>
+                <a href="{{ url_for('index') }}" class="secondary-btn">Cancel</a>
+            </div>
+        </form>
+    </section>
+</main>
 </body>
-
 </html>

@@ -3,317 +3,209 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Stockly | Inventory Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">
+        <span class="brand-icon">S</span> stockly<span class="brand-dot">.</span>
+    </a>
+    <nav>
+        <a href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('history') }}">Stock history</a>
+        <a href="{{ url_for('export_csv') }}">Export CSV ↓</a>
+    </nav>
+</header>
 
-{% set stats = namespace(units=0, value=0, low=0) %}
-{% for p in products %}
-    {% set stats.units = stats.units + (p.quantity|int) %}
-    {% set stats.value = stats.value + ((p.price|float) * (p.quantity|int)) %}
-    {% if p.quantity|int < 5 %}
-        {% set stats.low = stats.low + 1 %}
-    {% endif %}
-{% endfor %}
-
-<div class="app-shell">
-
-    <aside class="sidebar">
-        <a href="/" class="brand">
-            <span class="brand-icon">S</span>
-            <span>stockly<span class="brand-dot">.</span>
-                <small>INVENTORY MANAGER</small>
-            </span>
-        </a>
-
-        <div class="side-label">WORKSPACE</div>
-        <a href="/" class="nav-link active">
-            <span>▦</span> Dashboard
-        </a>
-        <a href="#inventory" class="nav-link">
-            <span>▤</span> Products
-        </a>
-        <a href="#add-product" class="nav-link">
-            <span>＋</span> Add product
-        </a>
-
-        <div class="sidebar-bottom">
-            <div class="status-dot"></div>
-            <div>
-                <strong>Database connected</strong>
-                <small>MongoDB Atlas</small>
-            </div>
+<main class="container">
+    <section class="welcome">
+        <div>
+            <span class="eyebrow">INVENTORY MANAGEMENT</span>
+            <h1>Your stock, under control<span class="brand-dot">.</span></h1>
+            <p>Manage products, monitor stock and track every movement.</p>
         </div>
-    </aside>
+        <a href="#add-product" class="primary-btn">＋ Add product</a>
+    </section>
 
-    <main class="main-content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-list">
+        {% for category, message in messages %}
+        <div class="flash {{ category }}">
+            {{ message }}
+            <button type="button" onclick="this.parentElement.remove()">×</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
 
-        <header class="topbar">
-            <div>
-                <div class="breadcrumb">Workspace / <strong>Dashboard</strong></div>
-                <h1>Inventory overview</h1>
-                <p class="subtitle">Manage your products and keep your stock under control.</p>
+    <section class="stats-grid">
+        <article class="stat-card"><span>Total products</span>
+            <strong>{{ total_products }}</strong><small>Unique products</small></article>
+        <article class="stat-card"><span>Total units</span>
+            <strong>{{ "{:,}".format(total_units) }}</strong><small>Units in inventory</small></article>
+        <article class="stat-card"><span>Inventory value</span>
+            <strong>₹{{ "{:,.2f}".format(inventory_value) }}</strong><small>Price × quantity</small></article>
+        <article class="stat-card alert-card"><span>Needs attention</span>
+            <strong>{{ low_stock_count + out_of_stock_count }}</strong>
+            <small>{{ low_stock_count }} low stock · {{ out_of_stock_count }} out of stock</small></article>
+    </section>
+
+    <section class="panel" id="add-product">
+        <div class="section-heading">
+            <div><span class="eyebrow">PRODUCT MANAGEMENT</span>
+            <h2>Add a product</h2></div>
+        </div>
+        <form action="{{ url_for('add_product') }}" method="POST" class="product-form">
+            <label>Product name
+                <input name="name" required maxlength="100" placeholder="Wireless mouse">
+            </label>
+            <label>Category
+                <input name="category" required maxlength="100" placeholder="Electronics">
+            </label>
+            <label>Unit price (₹)
+                <input name="price" type="number" min="0" step="0.01" required placeholder="599">
+            </label>
+            <label>Opening quantity
+                <input name="quantity" type="number" min="0" step="1" required placeholder="25">
+            </label>
+            <label>Supplier
+                <input name="supplier" required maxlength="100" placeholder="Supplier name">
+            </label>
+            <button class="primary-btn" type="submit">Add product +</button>
+        </form>
+    </section>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div><span class="eyebrow">YOUR CATALOG</span>
+            <h2>Product inventory</h2>
+            <p>Adjust quantities directly without opening the edit page.</p></div>
+            <span class="count">{{ products|length }} shown</span>
+        </div>
+
+        <form action="{{ url_for('index') }}" method="GET" class="filters">
+            <input type="search" name="q" value="{{ search }}" placeholder="Search products or suppliers...">
+            <select name="category">
+                <option value="">All categories</option>
+                {% for category in categories %}
+                <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+                {% endfor %}
+            </select>
+            <select name="status">
+                <option value="">All stock statuses</option>
+                <option value="in" {% if status_filter == 'in' %}selected{% endif %}>In stock</option>
+                <option value="low" {% if status_filter == 'low' %}selected{% endif %}>Low stock</option>
+                <option value="out" {% if status_filter == 'out' %}selected{% endif %}>Out of stock</option>
+            </select>
+            <button class="secondary-btn" type="submit">Filter</button>
+            <a class="clear-link" href="{{ url_for('index') }}">Reset</a>
+        </form>
+
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Product</th><th>Category</th><th>Unit price</th>
+                    <th>Quantity</th><th>Status</th><th>Supplier</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                {% for product in products %}
+                <tr>
+                    <td><div class="product-cell">
+                        <span class="product-avatar">{{ product.name[0]|upper }}</span>
+                        <strong>{{ product.name }}</strong>
+                    </div></td>
+                    <td><span class="category-badge">{{ product.category }}</span></td>
+                    <td class="price">₹{{ "{:,.2f}".format(product.price) }}</td>
+                    <td>
+                        <div class="quantity-control">
+                            <form action="{{ url_for('change_quantity', product_id=product._id, action='decrease') }}" method="POST">
+                                <input type="hidden" name="q" value="{{ search }}">
+                                <input type="hidden" name="category" value="{{ category_filter }}">
+                                <input type="hidden" name="status" value="{{ status_filter }}">
+                                <button class="qty-btn minus" type="submit" {% if product.quantity <= 0 %}disabled{% endif %} aria-label="Decrease quantity">−</button>
+                            </form>
+                            <strong class="quantity-value">{{ product.quantity }}</strong>
+                            <form action="{{ url_for('change_quantity', product_id=product._id, action='increase') }}" method="POST">
+                                <input type="hidden" name="q" value="{{ search }}">
+                                <input type="hidden" name="category" value="{{ category_filter }}">
+                                <input type="hidden" name="status" value="{{ status_filter }}">
+                                <button class="qty-btn plus" type="submit" aria-label="Increase quantity">+</button>
+                            </form>
+                        </div>
+                    </td>
+                    <td>
+                        {% if product.quantity == 0 %}
+                            <span class="badge out">● Out of stock</span>
+                        {% elif product.quantity <= low_stock_limit %}
+                            <span class="badge low">● Low stock</span>
+                        {% else %}
+                            <span class="badge in">● In stock</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ product.supplier }}</td>
+                    <td><div class="actions">
+                        <a class="edit-btn" href="{{ url_for('edit_product', product_id=product._id) }}">Edit</a>
+                        <form action="{{ url_for('delete_product', product_id=product._id) }}" method="POST" onsubmit="return confirm('Delete this product? Its history will remain.');">
+                            <button class="delete-btn" type="submit">Delete</button>
+                        </form>
+                    </div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="empty">
+                    <h3>No products found</h3>
+                    <p>Add a product or change your filters.</p>
+                </td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="analytics-grid">
+        <article class="panel">
+            <span class="eyebrow">STOCK BREAKDOWN</span>
+            <h2>Units by category</h2>
+            {% for item in category_chart %}
+            <div class="bar-row">
+                <div class="bar-label"><span>{{ item.name }}</span><strong>{{ item.quantity }}</strong></div>
+                <div class="bar-track"><div class="bar-fill" style="width: {{ (item.quantity / ([category_chart|map(attribute='quantity')|max, 1]|max) * 100)|round }}%"></div></div>
             </div>
+            {% else %}
+            <p>No category data yet.</p>
+            {% endfor %}
+        </article>
 
-            <a href="#add-product" class="primary-btn top-add">
-                <span>＋</span> Add product
-            </a>
-        </header>
-
-        <section class="welcome-banner">
-            <div>
-                <span class="eyebrow">YOUR INVENTORY, AT A GLANCE</span>
-                <h2>Everything in one place.</h2>
-                <p>Track products, monitor stock, and keep your inventory organized.</p>
+        <article class="panel">
+            <span class="eyebrow">LATEST ACTIVITY</span>
+            <h2>Recent stock movements</h2>
+            {% for movement in recent_history %}
+            <div class="activity-row">
+                <span class="activity-icon {% if movement.change > 0 %}positive{% elif movement.change < 0 %}negative{% endif %}">
+                    {% if movement.change > 0 %}+{% else %}−{% endif %}
+                </span>
+                <div class="activity-details">
+                    <strong>{{ movement.product_name }}</strong>
+                    <small>{{ movement.reason }} · {{ movement.timestamp.strftime('%d %b %Y, %H:%M') }}</small>
+                </div>
+                <strong class="{% if movement.change > 0 %}positive-text{% elif movement.change < 0 %}negative-text{% endif %}">
+                    {% if movement.change > 0 %}+{% endif %}{{ movement.change }}
+                </strong>
             </div>
-            <div class="banner-art" aria-hidden="true">
-                <div class="art-box box-one">▤</div>
-                <div class="art-box box-two">▦</div>
-                <div class="art-box box-three">✓</div>
-            </div>
-        </section>
+            {% else %}
+            <p>No movements recorded yet.</p>
+            {% endfor %}
+            <a class="history-link" href="{{ url_for('history') }}">View all history →</a>
+        </article>
+    </section>
 
-        <section class="stats-grid">
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span>Total products</span>
-                    <span class="stat-icon purple">▤</span>
-                </div>
-                <div class="stat-number">{{ products|length }}</div>
-                <div class="stat-caption">Different products in inventory</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span>Units in stock</span>
-                    <span class="stat-icon blue">▦</span>
-                </div>
-                <div class="stat-number">{{ stats.units }}</div>
-                <div class="stat-caption">Total available units</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span>Inventory value</span>
-                    <span class="stat-icon green">₹</span>
-                </div>
-                <div class="stat-number money">₹{{ "{:,.2f}".format(stats.value) }}</div>
-                <div class="stat-caption">Price × quantity for all products</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span>Low-stock items</span>
-                    <span class="stat-icon orange">!</span>
-                </div>
-                <div class="stat-number">{{ stats.low }}</div>
-                <div class="stat-caption">
-                    {% if stats.low > 0 %}
-                        <span class="warning-text">Needs attention</span>
-                    {% else %}
-                        All products have at least 5 units
-                    {% endif %}
-                </div>
-            </article>
-
-        </section>
-
-        <section class="content-grid">
-
-            <div class="panel add-panel" id="add-product">
-                <div class="panel-heading">
-                    <div>
-                        <span class="section-kicker">PRODUCT MANAGEMENT</span>
-                        <h2>Add a product</h2>
-                        <p>Enter the details of a new inventory item.</p>
-                    </div>
-                    <span class="heading-icon">＋</span>
-                </div>
-
-                <form action="/add" method="POST" class="product-form">
-                    <div class="form-group full-width">
-                        <label for="name">Product name</label>
-                        <input id="name" name="name" type="text"
-                               placeholder="e.g. Wireless keyboard" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="category">Category</label>
-                        <input id="category" name="category" type="text"
-                               placeholder="e.g. Electronics" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="supplier">Supplier</label>
-                        <input id="supplier" name="supplier" type="text"
-                               placeholder="e.g. ABC Traders" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="price">Unit price (₹)</label>
-                        <input id="price" name="price" type="number"
-                               min="0" step="0.01" placeholder="0.00" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="quantity">Quantity</label>
-                        <input id="quantity" name="quantity" type="number"
-                               min="0" step="1" placeholder="0" required>
-                    </div>
-
-                    <button type="submit" class="primary-btn submit-btn">
-                        ＋ Save product
-                    </button>
-                </form>
-            </div>
-
-            <div class="panel tip-panel">
-                <div class="tip-icon">✦</div>
-                <span class="section-kicker">INVENTORY TIP</span>
-                <h2>Stay ahead of stock shortages.</h2>
-                <p>Keep an eye on products with fewer than 5 units. Replenishing them early can help prevent stockouts.</p>
-                <a href="#inventory" class="text-link">Review inventory →</a>
-
-                <div class="tip-divider"></div>
-
-                <div class="tip-stat">
-                    <span>Items needing attention</span>
-                    <strong>{{ stats.low }}</strong>
-                </div>
-            </div>
-
-        </section>
-
-        <section class="panel inventory-panel" id="inventory">
-            <div class="inventory-heading">
-                <div>
-                    <span class="section-kicker">YOUR CATALOG</span>
-                    <h2>Product inventory</h2>
-                    <p>View and manage everything in your stock.</p>
-                </div>
-                <span class="count-badge">{{ products|length }} products</span>
-            </div>
-
-            <div class="table-toolbar">
-                <div class="search-box">
-                    <span>⌕</span>
-                    <input type="search" id="productSearch"
-                           placeholder="Search products, categories, suppliers...">
-                </div>
-                <span class="table-hint">Live search</span>
-            </div>
-
-            <div class="table-wrapper">
-                <table id="productTable">
-                    <thead>
-                        <tr>
-                            <th>PRODUCT</th>
-                            <th>CATEGORY</th>
-                            <th>UNIT PRICE</th>
-                            <th>QUANTITY</th>
-                            <th>STOCK STATUS</th>
-                            <th>SUPPLIER</th>
-                            <th>ACTIONS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for p in products %}
-                        <tr class="product-row">
-                            <td>
-                                <div class="product-name">
-                                    <span class="product-avatar">
-                                        {{ p.name[:1]|upper }}
-                                    </span>
-                                    <strong>{{ p.name }}</strong>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="category-badge">{{ p.category }}</span>
-                            </td>
-                            <td class="price-cell">₹{{ "{:,.2f}".format(p.price|float) }}</td>
-                            <td><strong>{{ p.quantity }}</strong></td>
-                            <td>
-                                {% if p.quantity|int == 0 %}
-                                    <span class="stock-badge out">
-                                        <span></span> Out of stock
-                                    </span>
-                                {% elif p.quantity|int < 5 %}
-                                    <span class="stock-badge low">
-                                        <span></span> Low stock
-                                    </span>
-                                {% else %}
-                                    <span class="stock-badge in-stock">
-                                        <span></span> In stock
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td class="supplier-cell">{{ p.supplier }}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    <a class="action-btn edit-btn"
-                                       href="/edit/{{ p._id }}" title="Edit product">Edit</a>
-                                    <a class="action-btn delete-btn"
-                                       href="/delete/{{ p._id }}"
-                                       onclick="return confirm('Delete {{ p.name|e }} from inventory?')"
-                                       title="Delete product">Delete</a>
-                                </div>
-                            </td>
-                        </tr>
-                    {% else %}
-                        <tr>
-                            <td colspan="7" class="empty-cell">
-                                <div class="empty-icon">▤</div>
-                                <strong>No products yet</strong>
-                                <p>Add your first product using the form above.</p>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-
-                <div id="noSearchResults" class="no-results" hidden>
-                    No products match your search.
-                </div>
-            </div>
-
-            <div class="table-footer">
-                <span>Showing <strong id="visibleCount">{{ products|length }}</strong>
-                    of {{ products|length }} products</span>
-                <span>Powered by <strong>MongoDB Atlas</strong></span>
-            </div>
-        </section>
-
-        <footer class="footer">
-            <span>© 2026 Stockly Inventory</span>
-            <span>Built with Flask &amp; MongoDB</span>
-        </footer>
-
-    </main>
-</div>
-
-<script>
-    const searchInput = document.getElementById("productSearch");
-    const rows = Array.from(document.querySelectorAll(".product-row"));
-    const visibleCount = document.getElementById("visibleCount");
-    const noResults = document.getElementById("noSearchResults");
-
-    searchInput.addEventListener("input", function () {
-        const query = this.value.trim().toLowerCase();
-        let visible = 0;
-
-        rows.forEach(function (row) {
-            const matches = row.textContent.toLowerCase().includes(query);
-            row.hidden = !matches;
-            if (matches) visible++;
-        });
-
-        visibleCount.textContent = visible;
-        noResults.hidden = visible !== 0 || rows.length === 0;
-    });
-</script>
-
+    <footer class="footer">
+        <span>Stockly Inventory Management</span>
+        <span>Flask · MongoDB Atlas</span>
+    </footer>
+</main>
 </body>
 </html>

@@ -1,0 +1,56 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stock History | Stockly</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">Stockly<span class="brand-dot">.</span></a>
+    <nav>
+        <a href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('export_csv') }}">Export CSV ↓</a>
+    </nav>
+</header>
+<main class="container">
+    <section class="welcome">
+        <div>
+            <span class="eyebrow">AUDIT TRAIL</span>
+            <h1>Stock movement history<span class="brand-dot">.</span></h1>
+            <p>Review recent inventory changes and their reasons.</p>
+        </div>
+    </section>
+    <section class="panel">
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Date and time</th><th>Product</th><th>Change</th>
+                    <th>Previous quantity</th><th>New quantity</th><th>Reason</th>
+                </tr></thead>
+                <tbody>
+                {% for movement in movements %}
+                <tr>
+                    <td>{{ movement.timestamp.strftime('%d %b %Y, %H:%M:%S') }}</td>
+                    <td><strong>{{ movement.product_name }}</strong></td>
+                    <td class="{% if movement.change > 0 %}positive-text{% elif movement.change < 0 %}negative-text{% endif %}">
+                        {% if movement.change > 0 %}+{% endif %}{{ movement.change }}
+                    </td>
+                    <td>{{ movement.old_quantity }}</td>
+                    <td>{{ movement.new_quantity }}</td>
+                    <td>{{ movement.reason }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">No stock movements have been recorded yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="help-text">Showing the latest 500 movements.</p>
+        <a href="{{ url_for('index') }}" class="secondary-btn">← Back to dashboard</a>
+    </section>
+</main>
+</body>
+</html>
