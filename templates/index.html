@@ -4,208 +4,442 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Stockly | Inventory Dashboard</title>
+    <title>Stockly | Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<header class="topbar">
-    <a class="brand" href="{{ url_for('index') }}">
-        <span class="brand-icon">S</span> stockly<span class="brand-dot">.</span>
-    </a>
-    <nav>
-        <a href="{{ url_for('index') }}">Dashboard</a>
-        <a href="{{ url_for('history') }}">Stock history</a>
-        <a href="{{ url_for('export_csv') }}">Export CSV ↓</a>
-    </nav>
-</header>
-
-<main class="container">
-    <section class="welcome">
-        <div>
-            <span class="eyebrow">INVENTORY MANAGEMENT</span>
-            <h1>Your stock, under control<span class="brand-dot">.</span></h1>
-            <p>Manage products, monitor stock and track every movement.</p>
+<div class="container">
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo">S</div>
+            <div>
+                <h1>Stockly</h1>
+                <p class="muted">Smart Inventory Management</p>
+            </div>
         </div>
-        <a href="#add-product" class="primary-btn">＋ Add product</a>
-    </section>
+
+        <div class="header-actions">
+            <span class="user-pill">
+                {{ current_user }} · {{ current_role|title }}
+            </span>
+            <a class="btn light" href="{{ url_for('history') }}">History</a>
+            <a class="btn light" href="{{ url_for('export_csv') }}">CSV</a>
+            <a class="btn" href="{{ url_for('pdf_report') }}">Download PDF</a>
+            <form method="POST" action="{{ url_for('logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn danger" type="submit">Logout</button>
+            </form>
+        </div>
+    </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <div class="flash-list">
         {% for category, message in messages %}
-        <div class="flash {{ category }}">
-            {{ message }}
-            <button type="button" onclick="this.parentElement.remove()">×</button>
-        </div>
+            <div class="alert {{ category }}">{{ message }}</div>
         {% endfor %}
-    </div>
-    {% endif %}
     {% endwith %}
 
-    <section class="stats-grid">
-        <article class="stat-card"><span>Total products</span>
-            <strong>{{ total_products }}</strong><small>Unique products</small></article>
-        <article class="stat-card"><span>Total units</span>
-            <strong>{{ "{:,}".format(total_units) }}</strong><small>Units in inventory</small></article>
-        <article class="stat-card"><span>Inventory value</span>
-            <strong>₹{{ "{:,.2f}".format(inventory_value) }}</strong><small>Price × quantity</small></article>
-        <article class="stat-card alert-card"><span>Needs attention</span>
-            <strong>{{ low_stock_count + out_of_stock_count }}</strong>
-            <small>{{ low_stock_count }} low stock · {{ out_of_stock_count }} out of stock</small></article>
+    <section class="stats">
+        <div class="card stat">
+            <span class="stat-icon">📦</span>
+            <p>Total Products</p>
+            <h2>{{ total_products }}</h2>
+        </div>
+        <div class="card stat">
+            <span class="stat-icon">🧮</span>
+            <p>Total Units</p>
+            <h2>{{ total_units }}</h2>
+        </div>
+        <div class="card stat">
+            <span class="stat-icon">💰</span>
+            <p>Inventory Value</p>
+            <h2>₹{{ "{:,.2f}".format(total_value|float) }}</h2>
+        </div>
+        <div class="card stat">
+            <span class="stat-icon">⚠️</span>
+            <p>Low / Out of Stock</p>
+            <h2>{{ low_stock_count + out_of_stock_count }}</h2>
+        </div>
+        <div class="card stat">
+            <span class="stat-icon">🛒</span>
+            <p>Units Sold</p>
+            <h2>{{ units_sold }}</h2>
+        </div>
+        <div class="card stat">
+            <span class="stat-icon">📈</span>
+            <p>Sales Revenue</p>
+            <h2>₹{{ "{:,.2f}".format(total_revenue|float) }}</h2>
+        </div>
     </section>
 
-    <section class="panel" id="add-product">
-        <div class="section-heading">
-            <div><span class="eyebrow">PRODUCT MANAGEMENT</span>
-            <h2>Add a product</h2></div>
+    <section class="two-columns">
+        <div class="card">
+            <h3>📊 Inventory by Category</h3>
+            {% for item in category_chart %}
+                <div class="chart-row">
+                    <div class="chart-label">
+                        <span>{{ item.category }}</span>
+                        <strong>{{ item.quantity }} units</strong>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill"
+                             style="width: {{ (item.quantity / max_category_quantity * 100)|round }}%">
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <p class="muted">No inventory data available.</p>
+            {% endfor %}
         </div>
-        <form action="{{ url_for('add_product') }}" method="POST" class="product-form">
-            <label>Product name
-                <input name="name" required maxlength="100" placeholder="Wireless mouse">
-            </label>
-            <label>Category
-                <input name="category" required maxlength="100" placeholder="Electronics">
-            </label>
-            <label>Unit price (₹)
-                <input name="price" type="number" min="0" step="0.01" required placeholder="599">
-            </label>
-            <label>Opening quantity
-                <input name="quantity" type="number" min="0" step="1" required placeholder="25">
-            </label>
-            <label>Supplier
-                <input name="supplier" required maxlength="100" placeholder="Supplier name">
-            </label>
-            <button class="primary-btn" type="submit">Add product +</button>
+
+        <div class="card">
+            <h3>🏆 Best-Selling Products</h3>
+            {% for name, quantity in best_sellers %}
+                <div class="activity">
+                    <strong>{{ loop.index }}. {{ name }}</strong>
+                    <span class="pill green">{{ quantity }} sold</span>
+                </div>
+            {% else %}
+                <p class="muted">Record your first sale to see best sellers.</p>
+            {% endfor %}
+
+            <hr>
+
+            <h3>Recent Activity</h3>
+            {% for entry in recent_history %}
+                <div class="activity">
+                    <div>
+                        <strong>{{ entry.product_name }}</strong>
+                        <p class="muted small">{{ entry.action }}</p>
+                    </div>
+                    <span>{{ "%+d"|format(entry.change|default(0, true)|int) }}</span>
+                </div>
+            {% else %}
+                <p class="muted">No activity yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="card">
+        <h3>➕ Add New Product</h3>
+        <form action="{{ url_for('add_product') }}"
+              method="POST" class="form-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <div>
+                <label>Product Name</label>
+                <input name="name" required placeholder="Product name">
+            </div>
+
+            <div>
+                <label>Category</label>
+                <input name="category" list="categories" required
+                       placeholder="Category">
+                <datalist id="categories">
+                    {% for category in categories %}
+                        <option value="{{ category }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+
+            <div>
+                <label>Quantity</label>
+                <input name="quantity" type="number" min="0" value="10" required>
+            </div>
+
+            <div>
+                <label>Price (₹)</label>
+                <input name="price" type="number" min="0" step="0.01" required>
+            </div>
+
+            <div>
+                <label>Reorder Level</label>
+                <input name="reorder_level" type="number" min="0" value="10" required>
+            </div>
+
+            <div class="wide-field">
+                <label>Product Image URL (optional)</label>
+                <input name="image_url" type="url"
+                       placeholder="https://example.com/product.jpg">
+            </div>
+
+            <button class="btn" type="submit">Add Product</button>
         </form>
     </section>
 
-    <section class="panel">
+    {% if current_role == 'admin' %}
+    <details class="card">
+        <summary><strong>👥 Create Staff Account</strong></summary>
+        <form action="{{ url_for('add_staff') }}"
+              method="POST" class="form-grid spaced">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label>Staff Username</label>
+                <input name="username" required>
+            </div>
+            <div>
+                <label>Temporary Password (12+ characters)</label>
+                <input name="password" type="password" minlength="12" required>
+            </div>
+            <button class="btn" type="submit">Create Staff</button>
+        </form>
+    </details>
+    {% endif %}
+
+    <section class="card">
         <div class="section-heading">
-            <div><span class="eyebrow">YOUR CATALOG</span>
-            <h2>Product inventory</h2>
-            <p>Adjust quantities directly without opening the edit page.</p></div>
-            <span class="count">{{ products|length }} shown</span>
+            <div>
+                <h3>📋 Product Inventory</h3>
+                <p class="muted">Manage quantities, record sales, and track stock.</p>
+            </div>
+            <span class="pill">{{ products|length }} products shown</span>
         </div>
 
-        <form action="{{ url_for('index') }}" method="GET" class="filters">
-            <input type="search" name="q" value="{{ search }}" placeholder="Search products or suppliers...">
+        <form method="GET" action="{{ url_for('index') }}" class="filters">
+            <input name="q" value="{{ search }}"
+                   placeholder="Search products...">
+
             <select name="category">
-                <option value="">All categories</option>
+                <option value="">All Categories</option>
                 {% for category in categories %}
-                <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+                    <option value="{{ category }}"
+                        {% if category_filter == category %}selected{% endif %}>
+                        {{ category }}
+                    </option>
                 {% endfor %}
             </select>
+
             <select name="status">
-                <option value="">All stock statuses</option>
-                <option value="in" {% if status_filter == 'in' %}selected{% endif %}>In stock</option>
-                <option value="low" {% if status_filter == 'low' %}selected{% endif %}>Low stock</option>
-                <option value="out" {% if status_filter == 'out' %}selected{% endif %}>Out of stock</option>
+                <option value="">All Stock Statuses</option>
+                <option value="healthy"
+                    {% if status_filter == 'healthy' %}selected{% endif %}>
+                    Healthy
+                </option>
+                <option value="low"
+                    {% if status_filter == 'low' %}selected{% endif %}>
+                    Low Stock
+                </option>
+                <option value="out"
+                    {% if status_filter == 'out' %}selected{% endif %}>
+                    Out of Stock
+                </option>
             </select>
-            <button class="secondary-btn" type="submit">Filter</button>
-            <a class="clear-link" href="{{ url_for('index') }}">Reset</a>
+
+            <button class="btn" type="submit">Filter</button>
+            <a class="btn light" href="{{ url_for('index') }}">Reset</a>
         </form>
 
-        <div class="table-wrap">
+        <div class="table-scroll">
             <table>
-                <thead><tr>
-                    <th>Product</th><th>Category</th><th>Unit price</th>
-                    <th>Quantity</th><th>Status</th><th>Supplier</th><th>Actions</th>
-                </tr></thead>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                        <th>Status</th>
+                        <th>Reorder Suggestion</th>
+                        <th>Sale</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
                 <tbody>
                 {% for product in products %}
-                <tr>
-                    <td><div class="product-cell">
-                        <span class="product-avatar">{{ product.name[0]|upper }}</span>
-                        <strong>{{ product.name }}</strong>
-                    </div></td>
-                    <td><span class="category-badge">{{ product.category }}</span></td>
-                    <td class="price">₹{{ "{:,.2f}".format(product.price) }}</td>
-                    <td>
-                        <div class="quantity-control">
-                            <form action="{{ url_for('change_quantity', product_id=product._id, action='decrease') }}" method="POST">
-                                <input type="hidden" name="q" value="{{ search }}">
-                                <input type="hidden" name="category" value="{{ category_filter }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <button class="qty-btn minus" type="submit" {% if product.quantity <= 0 %}disabled{% endif %} aria-label="Decrease quantity">−</button>
-                            </form>
-                            <strong class="quantity-value">{{ product.quantity }}</strong>
-                            <form action="{{ url_for('change_quantity', product_id=product._id, action='increase') }}" method="POST">
-                                <input type="hidden" name="q" value="{{ search }}">
-                                <input type="hidden" name="category" value="{{ category_filter }}">
-                                <input type="hidden" name="status" value="{{ status_filter }}">
-                                <button class="qty-btn plus" type="submit" aria-label="Increase quantity">+</button>
-                            </form>
-                        </div>
-                    </td>
-                    <td>
-                        {% if product.quantity == 0 %}
-                            <span class="badge out">● Out of stock</span>
-                        {% elif product.quantity <= low_stock_limit %}
-                            <span class="badge low">● Low stock</span>
-                        {% else %}
-                            <span class="badge in">● In stock</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ product.supplier }}</td>
-                    <td><div class="actions">
-                        <a class="edit-btn" href="{{ url_for('edit_product', product_id=product._id) }}">Edit</a>
-                        <form action="{{ url_for('delete_product', product_id=product._id) }}" method="POST" onsubmit="return confirm('Delete this product? Its history will remain.');">
-                            <button class="delete-btn" type="submit">Delete</button>
-                        </form>
-                    </div></td>
-                </tr>
+                    {% set qty = product.quantity %}
+                    {% set limit = product.reorder_level %}
+                    {% set reorder = [limit * 2 - qty, 0]|max %}
+
+                    <tr data-id="{{ product._id }}"
+                        data-limit="{{ limit }}"
+                        data-price="{{ product.price }}">
+                        <td>
+                            <div class="product-cell">
+                                <img src="{{ product.image_url }}"
+                                     alt="{{ product.name }}"
+                                     onerror="this.src='https://placehold.co/120x120?text=Product'">
+                                <div>
+                                    <strong>{{ product.name }}</strong>
+                                    <p class="muted small">
+                                        ₹{{ "%.2f"|format(product.price) }} / unit
+                                    </p>
+                                </div>
+                            </div>
+                        </td>
+
+                        <td>{{ product.category }}</td>
+                        <td>₹{{ "%.2f"|format(product.price) }}</td>
+
+                        <td>
+                            <div class="quantity-control">
+                                <button type="button" class="qty-btn"
+                                        data-action="decrease">−</button>
+                                <strong class="qty-number">{{ qty }}</strong>
+                                <button type="button" class="qty-btn"
+                                        data-action="increase">+</button>
+                            </div>
+                        </td>
+
+                        <td>
+                            <span class="status-pill
+                                {{ 'out' if qty == 0 else 'low' if qty <= limit else 'healthy' }}">
+                                {{ 'Out of Stock' if qty == 0 else
+                                   'Low Stock' if qty <= limit else 'Healthy' }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <span class="reorder-text">
+                                {{ 'Order ' ~ reorder ~ ' units'
+                                   if qty <= limit else 'No reorder needed' }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <button class="btn small-btn sell-btn"
+                                    type="button"
+                                    {% if qty == 0 %}disabled{% endif %}>
+                                Sell 1
+                            </button>
+                        </td>
+
+                        <td>
+                            <div class="action-group">
+                                <a class="btn light small-btn"
+                                   href="{{ url_for('edit_product', product_id=product._id) }}">
+                                    Edit
+                                </a>
+
+                                {% if current_role == 'admin' %}
+                                <form method="POST"
+                                      action="{{ url_for('delete_product', product_id=product._id) }}"
+                                      onsubmit="return confirm('Delete this product?')">
+                                    <input type="hidden" name="csrf_token"
+                                           value="{{ csrf_token }}">
+                                    <button class="btn danger small-btn"
+                                            type="submit">Delete</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
                 {% else %}
-                <tr><td colspan="7" class="empty">
-                    <h3>No products found</h3>
-                    <p>Add a product or change your filters.</p>
-                </td></tr>
+                    <tr>
+                        <td colspan="8" class="empty">
+                            No products found.
+                        </td>
+                    </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
     </section>
 
-    <section class="analytics-grid">
-        <article class="panel">
-            <span class="eyebrow">STOCK BREAKDOWN</span>
-            <h2>Units by category</h2>
-            {% for item in category_chart %}
-            <div class="bar-row">
-                <div class="bar-label"><span>{{ item.name }}</span><strong>{{ item.quantity }}</strong></div>
-                <div class="bar-track"><div class="bar-fill" style="width: {{ (item.quantity / ([category_chart|map(attribute='quantity')|max, 1]|max) * 100)|round }}%"></div></div>
-            </div>
-            {% else %}
-            <p>No category data yet.</p>
-            {% endfor %}
-        </article>
-
-        <article class="panel">
-            <span class="eyebrow">LATEST ACTIVITY</span>
-            <h2>Recent stock movements</h2>
-            {% for movement in recent_history %}
-            <div class="activity-row">
-                <span class="activity-icon {% if movement.change > 0 %}positive{% elif movement.change < 0 %}negative{% endif %}">
-                    {% if movement.change > 0 %}+{% else %}−{% endif %}
-                </span>
-                <div class="activity-details">
-                    <strong>{{ movement.product_name }}</strong>
-                    <small>{{ movement.reason }} · {{ movement.timestamp.strftime('%d %b %Y, %H:%M') }}</small>
-                </div>
-                <strong class="{% if movement.change > 0 %}positive-text{% elif movement.change < 0 %}negative-text{% endif %}">
-                    {% if movement.change > 0 %}+{% endif %}{{ movement.change }}
-                </strong>
-            </div>
-            {% else %}
-            <p>No movements recorded yet.</p>
-            {% endfor %}
-            <a class="history-link" href="{{ url_for('history') }}">View all history →</a>
-        </article>
-    </section>
-
     <footer class="footer">
-        <span>Stockly Inventory Management</span>
-        <span>Flask · MongoDB Atlas</span>
+        Stockly · Flask + MongoDB Atlas · Inventory Management
     </footer>
-</main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+    const csrfToken = {{ csrf_token|tojson }};
+    const toast = document.getElementById("toast");
+    let toastTimeout;
+
+    function showToast(message, error = false) {
+        toast.textContent = message;
+        toast.className = error ? "toast error" : "toast";
+        toast.hidden = false;
+        clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => toast.hidden = true, 2800);
+    }
+
+    function updateRow(row, quantity) {
+        const limit = Number(row.dataset.limit);
+        row.querySelector(".qty-number").textContent = quantity;
+
+        const status = row.querySelector(".status-pill");
+        status.className = "status-pill";
+
+        if (quantity === 0) {
+            status.classList.add("out");
+            status.textContent = "Out of Stock";
+        } else if (quantity <= limit) {
+            status.classList.add("low");
+            status.textContent = "Low Stock";
+        } else {
+            status.classList.add("healthy");
+            status.textContent = "Healthy";
+        }
+
+        const reorder = Math.max(0, limit * 2 - quantity);
+        row.querySelector(".reorder-text").textContent =
+            quantity <= limit
+                ? `Order ${reorder} units`
+                : "No reorder needed";
+
+        row.querySelector(".sell-btn").disabled = quantity === 0;
+    }
+
+    async function updateStock(row, action) {
+        const id = row.dataset.id;
+        const url = action === "sell"
+            ? `/sell/${encodeURIComponent(id)}`
+            : `/quantity/${encodeURIComponent(id)}/${action}`;
+
+        const buttons = row.querySelectorAll("button");
+        buttons.forEach(btn => btn.disabled = true);
+
+        try {
+            const body = new URLSearchParams();
+            body.set("csrf_token", csrfToken);
+            if (action === "sell") {
+                body.set("quantity", "1");
+            } else {
+                body.set("amount", "1");
+            }
+
+            const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-Token": csrfToken,
+                },
+                body,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                showToast(data.message || "Update failed", true);
+                return;
+            }
+
+            updateRow(row, Number(data.quantity));
+            showToast(data.message);
+
+            // Refresh dashboard totals on the next page visit.
+            // The product row updates immediately without page reload.
+        } catch (error) {
+            showToast("Network error. Please try again.", true);
+        } finally {
+            buttons.forEach(btn => btn.disabled = false);
+            row.querySelector(".sell-btn").disabled =
+                Number(row.querySelector(".qty-number").textContent) === 0;
+        }
+    }
+
+    document.querySelectorAll("tbody tr[data-id]").forEach(row => {
+        row.querySelectorAll(".qty-btn").forEach(button => {
+            button.addEventListener("click", () => {
+                updateStock(row, button.dataset.action);
+            });
+        });
+
+        row.querySelector(".sell-btn").addEventListener("click", () => {
+            updateStock(row, "sell");
+        });
+    });
+</script>
 </body>
 </html>

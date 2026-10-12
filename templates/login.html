@@ -1,0 +1,37 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login | Stockly</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+    <div class="login-card">
+        <div class="logo">S</div>
+        <h1>Welcome to Stockly</h1>
+        <p class="muted">Sign in to manage your inventory</p>
+
+        {% with messages = get_flashed_messages() %}
+            {% for message in messages %}
+                <div class="alert error">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <label>Username</label>
+            <input name="username" required autocomplete="username"
+                   placeholder="Enter username">
+
+            <label>Password</label>
+            <input name="password" type="password" required
+                   autocomplete="current-password"
+                   placeholder="Enter password">
+
+            <button class="btn full" type="submit">Sign In</button>
+        </form>
+        <p class="muted small">Inventory management made simple.</p>
+    </div>
+</body>
+</html>
