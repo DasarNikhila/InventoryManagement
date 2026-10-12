@@ -1,6 +1,7 @@
 
 Flask
-pymongo[srv]
+pymongo
+dnspython
 python-dotenv
 gunicorn
 reportlab
