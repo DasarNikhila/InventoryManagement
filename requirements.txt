@@ -1,6 +1,9 @@
+
 Flask
 pymongo[srv]
 python-dotenv
 gunicorn
 reportlab
+qrcode[pil]
+python-barcode
 Werkzeug

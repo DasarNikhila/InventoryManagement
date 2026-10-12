@@ -4,25 +4,25 @@ import io
 import csv
 import re
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import wraps
 
+import barcode
+import qrcode
+from barcode.writer import ImageWriter
 from bson import ObjectId
+from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, jsonify, Response, session, send_file, abort
 )
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-from werkzeug.security import generate_password_hash, check_password_hash
-from dotenv import load_dotenv
-
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
-)
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
@@ -34,12 +34,10 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "false").lower() == "true",
 )
 
-client = MongoClient(
-    os.environ["MONGO_URI"],
-    serverSelectionTimeoutMS=10000
-)
+client = MongoClient(os.environ["MONGO_URI"], serverSelectionTimeoutMS=10000)
 db = client["inventoryDB"]
 
+# Keep your existing MongoDB collections.
 products = db["products"]
 stock_history = db["stock_history"]
 sales = db["sales"]
@@ -47,6 +45,8 @@ users = db["users"]
 
 LOW_STOCK_LIMIT = 10
 
+# Only products missing by name are added.
+# Existing product quantities and prices are never reset.
 DEFAULT_PRODUCTS = [
     ("Blue Ballpoint Pens", "Stationary", 50, 10),
     ("A4 Notebooks", "Stationary", 30, 60),
@@ -73,19 +73,7 @@ DEFAULT_PRODUCTS = [
     ("Desk Organizer", "Accessories", 7, 250),
 ]
 
-# Product images are loaded automatically using a remote image service.
-# Replace these with your own hosted image URLs for reliable product photos.
-IMAGE_KEYWORDS = {
-    "pen": "pen", "notebook": "notebook", "stapler": "stapler",
-    "pencil": "pencil", "sticky": "stationery", "tape": "tape",
-    "eraser": "eraser", "geometry": "stationery",
-    "highlighter": "marker", "ruler": "ruler",
-    "paper": "paper", "glue": "glue", "folder": "folder",
-    "mouse": "computer-mouse", "usb": "usb",
-    "keyboard": "keyboard", "headphone": "headphones",
-    "webcam": "webcam", "bottle": "water-bottle",
-    "organizer": "desk",
-}
+initialized = False
 
 
 def now():
@@ -107,12 +95,12 @@ def to_float(value, default=0):
 
 
 def product_image(name):
-    name = name.lower()
-    keyword = next(
-        (value for key, value in IMAGE_KEYWORDS.items() if key in name),
-        "product"
+    # A placeholder image. You can supply a real image URL on the edit page.
+    safe_name = re.sub(r"[^a-zA-Z0-9 ]", "", name)[:20]
+    return (
+        "https://placehold.co/120x120/eee9ff/6250d9"
+        f"?text={safe_name.replace(' ', '+')}"
     )
-    return f"https://placehold.co/120x120/eee9ff/6250d9?text={keyword}"
 
 
 def get_product(product_id):
@@ -128,15 +116,15 @@ def normalize(item):
         item.get("reorder_level"), LOW_STOCK_LIMIT
     )
     item["image_url"] = item.get("image_url") or product_image(
-        item.get("name", "product")
+        item.get("name", "Product")
     )
     return item
 
 
-def record(product, action, change, after, reason=""):
+def record(item, action, change, after, reason=""):
     stock_history.insert_one({
-        "product_id": product.get("_id"),
-        "product_name": product.get("name", "Unknown"),
+        "product_id": item.get("_id"),
+        "product_name": item.get("name", "Unknown"),
         "action": action,
         "change": change,
         "quantity_after": after,
@@ -149,29 +137,33 @@ def record(product, action, change, after, reason=""):
 def initialize_database():
     users.create_index("username", unique=True)
 
-    admin_username = os.getenv("ADMIN_USERNAME")
-    admin_password = os.getenv("ADMIN_PASSWORD")
+    username = os.getenv("ADMIN_USERNAME", "admin")
+    password = os.getenv("ADMIN_PASSWORD", "")
 
-    if admin_username and admin_password:
-        if not users.find_one({"username": admin_username}):
-            try:
-                users.insert_one({
-                    "username": admin_username,
-                    "password_hash": generate_password_hash(admin_password),
-                    "role": "admin",
-                    "created_at": now(),
-                })
-            except DuplicateKeyError:
-                pass
+    # Create the initial admin only if it does not already exist.
+    # Changing .env later does not reset an existing user's password.
+    if password and not users.find_one({"username": username}):
+        try:
+            users.insert_one({
+                "username": username,
+                "password_hash": generate_password_hash(password),
+                "role": "admin",
+                "created_at": now(),
+            })
+        except DuplicateKeyError:
+            pass
 
     for name, category, quantity, price in DEFAULT_PRODUCTS:
         existing = products.find_one({
-            "name": {"$regex": "^" + re.escape(name) + "$", "$options": "i"}
+            "name": {
+                "$regex": "^" + re.escape(name) + "$",
+                "$options": "i",
+            }
         })
         if existing:
             continue
 
-        document = {
+        item = {
             "name": name,
             "category": category,
             "quantity": quantity,
@@ -180,13 +172,9 @@ def initialize_database():
             "image_url": product_image(name),
             "created_at": now(),
         }
-        result = products.insert_one(document)
-        document["_id"] = result.inserted_id
-        record(document, "Initial stock", quantity, quantity)
-
-
-# Seed when a request first arrives, including on Render/Gunicorn.
-initialized = False
+        result = products.insert_one(item)
+        item["_id"] = result.inserted_id
+        record(item, "Initial stock", quantity, quantity)
 
 
 @app.before_request
@@ -197,17 +185,15 @@ def setup():
         initialize_database()
         initialized = True
 
-    if request.endpoint == "static":
-        return
-
-    # CSRF protection for all authenticated POST forms and AJAX requests.
     if request.method == "POST" and request.endpoint != "login":
         expected = session.get("csrf_token")
         supplied = (
             request.form.get("csrf_token")
             or request.headers.get("X-CSRF-Token")
         )
-        if not expected or not secrets.compare_digest(expected, supplied or ""):
+        if not expected or not secrets.compare_digest(
+            expected, supplied or ""
+        ):
             abort(400, "Invalid form security token")
 
 
@@ -253,7 +239,7 @@ def reply(message, success=True, quantity=None, status=200):
     return redirect(url_for("index"))
 
 
-# ---------------- AUTHENTICATION ----------------
+# ---------------- LOGIN AND ROLES ----------------
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -300,7 +286,7 @@ def add_staff():
         })
         flash("Staff account created.", "success")
     except DuplicateKeyError:
-        flash("Username already exists.", "error")
+        flash("That username already exists.", "error")
 
     return redirect(url_for("index"))
 
@@ -314,17 +300,17 @@ def index():
     category_filter = request.args.get("category", "")
     status_filter = request.args.get("status", "")
 
-    all_products = [normalize(p) for p in products.find()]
-    filtered = []
+    all_items = [normalize(p) for p in products.find()]
+    visible = []
 
-    for product in all_products:
-        if search and search.lower() not in product.get("name", "").lower():
+    for p in all_items:
+        if search and search.lower() not in p.get("name", "").lower():
             continue
-        if category_filter and product.get("category") != category_filter:
+        if category_filter and p.get("category") != category_filter:
             continue
 
-        qty = product["quantity"]
-        limit = product["reorder_level"]
+        qty = p["quantity"]
+        limit = p["reorder_level"]
 
         if status_filter == "low" and not (0 < qty <= limit):
             continue
@@ -333,30 +319,27 @@ def index():
         if status_filter == "healthy" and qty <= limit:
             continue
 
-        filtered.append(product)
+        visible.append(p)
 
-    filtered.sort(key=lambda p: p.get("name", "").lower())
+    visible.sort(key=lambda p: p.get("name", "").lower())
 
-    total_products = len(all_products)
-    total_units = sum(p["quantity"] for p in all_products)
-    total_value = sum(p["quantity"] * p["price"] for p in all_products)
+    total_products = len(all_items)
+    total_units = sum(p["quantity"] for p in all_items)
+    total_value = sum(p["quantity"] * p["price"] for p in all_items)
     low_stock_count = sum(
-        1 for p in all_products if 0 < p["quantity"] <= p["reorder_level"]
+        p["quantity"] > 0 and p["quantity"] <= p["reorder_level"]
+        for p in all_items
     )
-    out_of_stock_count = sum(
-        1 for p in all_products if p["quantity"] == 0
-    )
+    out_of_stock_count = sum(p["quantity"] == 0 for p in all_items)
 
-    category_totals = {}
-    for p in all_products:
+    totals = {}
+    for p in all_items:
         category = p.get("category", "Other")
-        category_totals[category] = (
-            category_totals.get(category, 0) + p["quantity"]
-        )
+        totals[category] = totals.get(category, 0) + p["quantity"]
 
     category_chart = [
         {"category": k, "quantity": v}
-        for k, v in sorted(category_totals.items())
+        for k, v in sorted(totals.items())
     ]
     max_category_quantity = max(
         [c["quantity"] for c in category_chart] or [1]
@@ -366,31 +349,23 @@ def index():
         stock_history.find().sort("timestamp", -1).limit(5)
     )
 
-    all_sales = list(sales.find())
-    total_revenue = sum(to_float(s.get("total")) for s in all_sales)
-    units_sold = sum(to_int(s.get("quantity")) for s in all_sales)
+    sales_items = list(sales.find())
+    total_revenue = sum(to_float(s.get("total")) for s in sales_items)
+    units_sold = sum(to_int(s.get("quantity")) for s in sales_items)
 
-    sales_by_product = {}
-    for sale in all_sales:
-        name = sale.get("product_name", "Unknown")
-        sales_by_product[name] = (
-            sales_by_product.get(name, 0) + to_int(sale.get("quantity"))
-        )
+    best = {}
+    for s in sales_items:
+        name = s.get("product_name", "Unknown")
+        best[name] = best.get(name, 0) + to_int(s.get("quantity"))
 
-    best_sellers = sorted(
-        sales_by_product.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )[:5]
+    best_sellers = sorted(best.items(), key=lambda x: x[1], reverse=True)[:5]
 
     return render_template(
         "index.html",
-        products=filtered,
-        categories=sorted({
-            p.get("category", "Other") for p in all_products
-        }),
+        products=visible,
+        categories=sorted({p.get("category", "Other") for p in all_items}),
         category_chart=category_chart,
-        max_category_quantity=max(max_category_quantity, 1),
+        max_category_quantity=max(1, max_category_quantity),
         total_products=total_products,
         total_units=total_units,
         total_value=total_value,
@@ -406,7 +381,7 @@ def index():
     )
 
 
-# ---------------- PRODUCT MANAGEMENT ----------------
+# ---------------- ADD PRODUCT ----------------
 
 @app.route("/add", methods=["POST"])
 @login_required
@@ -416,13 +391,13 @@ def add_product():
     quantity = to_int(request.form.get("quantity"), -1)
     price = to_float(request.form.get("price"), -1)
     reorder_level = to_int(request.form.get("reorder_level"), 10)
+    image_url = request.form.get("image_url", "").strip()
 
     if not name or not category or quantity < 0 or price < 0 or reorder_level < 0:
-        return reply("Invalid product details.", False)
+        return reply("Please enter valid product details.", False)
 
-    image_url = request.form.get("image_url", "").strip()
     if image_url and not image_url.startswith(("https://", "http://")):
-        return reply("Image URL must start with https:// or http://", False)
+        return reply("Image URL must start with http:// or https://.", False)
 
     item = {
         "name": name,
@@ -439,6 +414,8 @@ def add_product():
 
     return reply("Product added successfully.")
 
+
+# ---------------- AJAX STOCK CONTROLS ----------------
 
 @app.route("/quantity/<product_id>/<action>", methods=["POST"])
 @login_required
@@ -475,6 +452,44 @@ def change_quantity(product_id, action):
     )
     return reply("Stock updated.", True, updated["quantity"])
 
+
+# ---------------- SALES ----------------
+
+@app.route("/sell/<product_id>", methods=["POST"])
+@login_required
+def sell_product(product_id):
+    item = get_product(product_id)
+    if not item:
+        return reply("Product not found.", False, status=404)
+
+    amount = to_int(request.form.get("quantity"), 1)
+    if not 1 <= amount <= 10000:
+        return reply("Invalid sales quantity.", False, status=400)
+
+    updated = products.find_one_and_update(
+        {"_id": item["_id"], "quantity": {"$gte": amount}},
+        {"$inc": {"quantity": -amount}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        return reply("Insufficient stock.", False, status=400)
+
+    price = to_float(item.get("price"))
+    sales.insert_one({
+        "product_id": item["_id"],
+        "product_name": item["name"],
+        "quantity": amount,
+        "unit_price": price,
+        "total": round(price * amount, 2),
+        "username": session["username"],
+        "timestamp": now(),
+    })
+    record(updated, "Sale", -amount, updated["quantity"], "Recorded sale")
+
+    return reply("Sale recorded.", True, updated["quantity"])
+
+
+# ---------------- EDIT AND DELETE ----------------
 
 @app.route("/edit/<product_id>")
 @login_required
@@ -537,49 +552,54 @@ def delete_product(product_id):
     if not item:
         abort(404)
 
-    result = products.delete_one({"_id": item["_id"]})
-    if result.deleted_count:
-        record(item, "Product deleted", -to_int(item.get("quantity")), 0)
-        flash("Product deleted.", "success")
-
+    products.delete_one({"_id": item["_id"]})
+    record(item, "Product deleted", -to_int(item.get("quantity")), 0)
+    flash("Product deleted.", "success")
     return redirect(url_for("index"))
 
 
-# ---------------- SALES ----------------
+# ---------------- BARCODE AND QR CODE ----------------
 
-@app.route("/sell/<product_id>", methods=["POST"])
+@app.route("/code/qr/<product_id>")
 @login_required
-def sell_product(product_id):
+def qr_code(product_id):
     item = get_product(product_id)
     if not item:
-        return reply("Product not found.", False, status=404)
+        abort(404)
 
-    amount = to_int(request.form.get("quantity"), 1)
-    if amount < 1 or amount > 10000:
-        return reply("Invalid sales quantity.", False, status=400)
+    # Encode the product's stable database ID.
+    qr = qrcode.QRCode(box_size=8, border=3)
+    qr.add_data(str(item["_id"]))
+    qr.make(fit=True)
 
-    updated = products.find_one_and_update(
-        {"_id": item["_id"], "quantity": {"$gte": amount}},
-        {"$inc": {"quantity": -amount}},
-        return_document=ReturnDocument.AFTER,
-    )
+    image = qr.make_image(fill_color="black", back_color="white")
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    output.seek(0)
 
-    if not updated:
-        return reply("Insufficient stock.", False, status=400)
+    return send_file(output, mimetype="image/png")
 
-    price = to_float(item.get("price"))
-    sales.insert_one({
-        "product_id": item["_id"],
-        "product_name": item["name"],
-        "quantity": amount,
-        "unit_price": price,
-        "total": round(price * amount, 2),
-        "username": session["username"],
-        "timestamp": now(),
+
+@app.route("/code/barcode/<product_id>")
+@login_required
+def barcode_image(product_id):
+    item = get_product(product_id)
+    if not item:
+        abort(404)
+
+    # Code 128 can encode the product's database ID.
+    output = io.BytesIO()
+    code = barcode.get("code128", str(item["_id"]), writer=ImageWriter())
+    code.write(output, options={
+        "module_width": 0.3,
+        "module_height": 12,
+        "quiet_zone": 3,
+        "write_text": True,
+        "font_size": 9,
     })
+    output.seek(0)
 
-    record(updated, "Sale", -amount, updated["quantity"], "Customer sale")
-    return reply("Sale recorded.", True, updated["quantity"])
+    return send_file(output, mimetype="image/png")
 
 
 # ---------------- STOCK HISTORY ----------------
@@ -587,10 +607,10 @@ def sell_product(product_id):
 @app.route("/history")
 @login_required
 def history():
-    history_list = list(
+    entries = list(
         stock_history.find().sort("timestamp", -1).limit(500)
     )
-    return render_template("history.html", history=history_list)
+    return render_template("history.html", history=entries)
 
 
 # ---------------- CSV EXPORT ----------------
@@ -600,10 +620,9 @@ def history():
 def export_csv():
     output = io.StringIO()
     writer = csv.writer(output)
-
     writer.writerow([
         "Name", "Category", "Quantity", "Unit Price",
-        "Stock Value", "Reorder Level"
+        "Stock Value", "Reorder Level",
     ])
 
     for raw in products.find().sort("name", 1):
@@ -620,10 +639,7 @@ def export_csv():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={
-            "Content-Disposition":
-                "attachment; filename=stockly_inventory.csv"
-        },
+        headers={"Content-Disposition": "attachment; filename=stockly_inventory.csv"},
     )
 
 
@@ -633,15 +649,16 @@ def export_csv():
 @login_required
 def pdf_report():
     items = [normalize(p) for p in products.find().sort("name", 1)]
+    output = io.BytesIO()
 
-    buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
+        output,
         pagesize=landscape(A4),
-        leftMargin=25, rightMargin=25,
-        topMargin=30, bottomMargin=30,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=30,
+        bottomMargin=30,
     )
-
     styles = getSampleStyleSheet()
     elements = [
         Paragraph("STOCKLY - Inventory Report", styles["Title"]),
@@ -649,67 +666,66 @@ def pdf_report():
             "Generated: " + now().strftime("%d %B %Y %H:%M UTC"),
             styles["Normal"],
         ),
-        Spacer(1, 18),
+        Spacer(1, 16),
     ]
 
     rows = [[
-        "Product", "Category", "Quantity", "Price",
-        "Value", "Reorder", "Status"
+        "Product", "Category", "Quantity", "Unit Price",
+        "Stock Value", "Reorder At", "Status",
     ]]
-
     total_value = 0
 
     for p in items:
         qty = p["quantity"]
+        limit = p["reorder_level"]
         value = qty * p["price"]
         total_value += value
-
         status = (
             "Out of stock" if qty == 0
-            else "Low stock" if qty <= p["reorder_level"]
+            else "Low stock" if qty <= limit
             else "Healthy"
         )
-
         rows.append([
             p.get("name", "")[:30],
             p.get("category", "")[:20],
             str(qty),
             f"Rs. {p['price']:.2f}",
             f"Rs. {value:.2f}",
-            str(p["reorder_level"]),
+            str(limit),
             status,
         ])
 
     table = Table(
         rows,
         repeatRows=1,
-        colWidths=[160, 110, 60, 85, 95, 70, 90],
+        colWidths=[150, 95, 55, 80, 90, 65, 85],
     )
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#6254dc")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#6755e8")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
-            colors.white, colors.HexColor("#f4f4fb")
+            colors.white, colors.HexColor("#f2f0ff")
         ]),
         ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
 
-    elements.append(table)
-    elements.append(Spacer(1, 20))
-    elements.append(Paragraph(
-        f"Total products: {len(items)} | "
-        f"Inventory value: Rs. {total_value:,.2f}",
-        styles["Heading2"],
-    ))
+    elements.extend([
+        table,
+        Spacer(1, 18),
+        Paragraph(
+            f"Total products: {len(items)} | "
+            f"Inventory value: Rs. {total_value:,.2f}",
+            styles["Heading2"],
+        ),
+    ])
 
     doc.build(elements)
-    buffer.seek(0)
-
+    output.seek(0)
     return send_file(
-        buffer,
+        output,
         as_attachment=True,
         download_name="stockly_inventory_report.pdf",
         mimetype="application/pdf",

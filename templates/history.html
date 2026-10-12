@@ -12,7 +12,7 @@
     <div class="card">
         <a href="{{ url_for('index') }}" class="back-link">← Back to Dashboard</a>
         <h1>Stock Movement History</h1>
-        <p class="muted">View inventory changes and recorded sales.</p>
+        <p class="muted">Review stock adjustments and sales.</p>
 
         <div class="table-scroll">
             <table>
@@ -32,7 +32,7 @@
                     <tr>
                         <td>
                             {% if entry.timestamp %}
-                                {{ entry.timestamp.strftime('%d %b %Y, %H:%M') }}
+                                {{ entry.timestamp.strftime('%d %b %Y %H:%M') }}
                             {% else %}
                                 —
                             {% endif %}
@@ -45,7 +45,7 @@
                         <td>{{ entry.reason|default('—', true) }}</td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="empty">No history yet.</td></tr>
+                    <tr><td colspan="7" class="empty">No history found.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

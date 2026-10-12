@@ -12,18 +12,16 @@
     <div class="card">
         <a href="{{ url_for('index') }}" class="back-link">← Back to Dashboard</a>
         <h1>Edit Product</h1>
-        <p class="muted">Update product information and reorder settings.</p>
 
-        {% with messages = get_flashed_messages() %}
-            {% for message in messages %}
-                <div class="alert error">{{ message }}</div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="alert {{ category }}">{{ message }}</div>
             {% endfor %}
         {% endwith %}
 
         <form method="POST"
               action="{{ url_for('update_product', product_id=product._id) }}"
               class="edit-form">
-
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
             <label>Product Name</label>
@@ -44,14 +42,15 @@
             <input name="reorder_level" type="number" min="0"
                    value="{{ product.reorder_level }}" required>
 
-            <label>Product Image URL</label>
-            <input name="image_url" type="url"
-                   value="{{ product.image_url }}">
+            <label>Image URL</label>
+            <input name="image_url" type="url" value="{{ product.image_url }}"
+                   placeholder="https://example.com/image.jpg">
 
             <img class="edit-preview" src="{{ product.image_url }}"
-                 alt="{{ product.name }}">
+                 alt="{{ product.name }}"
+                 onerror="this.onerror=null;this.src='https://placehold.co/120x120?text=Product'">
 
-            <button type="submit" class="btn full">Save Changes</button>
+            <button class="btn full" type="submit">Save Changes</button>
         </form>
     </div>
 </div>

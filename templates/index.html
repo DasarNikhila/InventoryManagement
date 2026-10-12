@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Stockly | Dashboard</title>
+    <title>Stockly Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -19,12 +19,10 @@
         </div>
 
         <div class="header-actions">
-            <span class="user-pill">
-                {{ current_user }} · {{ current_role|title }}
-            </span>
+            <span class="pill">{{ current_user }} · {{ current_role }}</span>
             <a class="btn light" href="{{ url_for('history') }}">History</a>
             <a class="btn light" href="{{ url_for('export_csv') }}">CSV</a>
-            <a class="btn" href="{{ url_for('pdf_report') }}">Download PDF</a>
+            <a class="btn" href="{{ url_for('pdf_report') }}">PDF Report</a>
             <form method="POST" action="{{ url_for('logout') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="btn danger" type="submit">Logout</button>
@@ -38,42 +36,51 @@
         {% endfor %}
     {% endwith %}
 
+    {% if low_stock_count or out_of_stock_count %}
+    <div class="alert warning">
+        <strong>⚠ Stock alert:</strong>
+        {{ low_stock_count }} low-stock product(s) and
+        {{ out_of_stock_count }} out-of-stock product(s).
+        <a href="{{ url_for('index', status='low') }}">View low stock</a>
+        ·
+        <a href="{{ url_for('index', status='out') }}">View out of stock</a>
+    </div>
+    {% else %}
+    <div class="alert success">
+        ✓ All products are above their reorder levels.
+    </div>
+    {% endif %}
+
     <section class="stats">
         <div class="card stat">
-            <span class="stat-icon">📦</span>
-            <p>Total Products</p>
+            <span>📦 Total Products</span>
             <h2>{{ total_products }}</h2>
         </div>
         <div class="card stat">
-            <span class="stat-icon">🧮</span>
-            <p>Total Units</p>
+            <span>🧮 Total Units</span>
             <h2>{{ total_units }}</h2>
         </div>
         <div class="card stat">
-            <span class="stat-icon">💰</span>
-            <p>Inventory Value</p>
+            <span>💰 Inventory Value</span>
             <h2>₹{{ "{:,.2f}".format(total_value|float) }}</h2>
         </div>
         <div class="card stat">
-            <span class="stat-icon">⚠️</span>
-            <p>Low / Out of Stock</p>
+            <span>⚠ Low / Out of Stock</span>
             <h2>{{ low_stock_count + out_of_stock_count }}</h2>
         </div>
         <div class="card stat">
-            <span class="stat-icon">🛒</span>
-            <p>Units Sold</p>
+            <span>🛒 Units Sold</span>
             <h2>{{ units_sold }}</h2>
         </div>
         <div class="card stat">
-            <span class="stat-icon">📈</span>
-            <p>Sales Revenue</p>
+            <span>📈 Sales Revenue</span>
             <h2>₹{{ "{:,.2f}".format(total_revenue|float) }}</h2>
         </div>
     </section>
 
     <section class="two-columns">
         <div class="card">
-            <h3>📊 Inventory by Category</h3>
+            <h3>Inventory by Category</h3>
             {% for item in category_chart %}
                 <div class="chart-row">
                     <div class="chart-label">
@@ -87,24 +94,22 @@
                     </div>
                 </div>
             {% else %}
-                <p class="muted">No inventory data available.</p>
+                <p class="muted">No inventory data yet.</p>
             {% endfor %}
         </div>
 
         <div class="card">
-            <h3>🏆 Best-Selling Products</h3>
+            <h3>Best-Selling Products</h3>
             {% for name, quantity in best_sellers %}
                 <div class="activity">
-                    <strong>{{ loop.index }}. {{ name }}</strong>
-                    <span class="pill green">{{ quantity }} sold</span>
+                    <strong>{{ name }}</strong>
+                    <span class="pill">{{ quantity }} sold</span>
                 </div>
             {% else %}
-                <p class="muted">Record your first sale to see best sellers.</p>
+                <p class="muted">Record a sale to populate this list.</p>
             {% endfor %}
 
-            <hr>
-
-            <h3>Recent Activity</h3>
+            <h3 class="section-space">Recent Stock Activity</h3>
             {% for entry in recent_history %}
                 <div class="activity">
                     <div>
@@ -114,70 +119,61 @@
                     <span>{{ "%+d"|format(entry.change|default(0, true)|int) }}</span>
                 </div>
             {% else %}
-                <p class="muted">No activity yet.</p>
+                <p class="muted">No activity recorded.</p>
             {% endfor %}
         </div>
     </section>
 
     <section class="card">
-        <h3>➕ Add New Product</h3>
-        <form action="{{ url_for('add_product') }}"
-              method="POST" class="form-grid">
+        <h3>Add New Product</h3>
+        <form action="{{ url_for('add_product') }}" method="POST" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
             <div>
                 <label>Product Name</label>
-                <input name="name" required placeholder="Product name">
+                <input name="name" required>
             </div>
-
             <div>
                 <label>Category</label>
-                <input name="category" list="categories" required
-                       placeholder="Category">
-                <datalist id="categories">
+                <input name="category" list="category-list" required>
+                <datalist id="category-list">
                     {% for category in categories %}
                         <option value="{{ category }}">
                     {% endfor %}
                 </datalist>
             </div>
-
             <div>
                 <label>Quantity</label>
                 <input name="quantity" type="number" min="0" value="10" required>
             </div>
-
             <div>
-                <label>Price (₹)</label>
+                <label>Unit Price (₹)</label>
                 <input name="price" type="number" min="0" step="0.01" required>
             </div>
-
             <div>
                 <label>Reorder Level</label>
                 <input name="reorder_level" type="number" min="0" value="10" required>
             </div>
-
-            <div class="wide-field">
-                <label>Product Image URL (optional)</label>
-                <input name="image_url" type="url"
-                       placeholder="https://example.com/product.jpg">
+            <div>
+                <label>Image URL (optional)</label>
+                <input name="image_url" type="url" placeholder="https://...">
             </div>
-
             <button class="btn" type="submit">Add Product</button>
         </form>
     </section>
 
     {% if current_role == 'admin' %}
     <details class="card">
-        <summary><strong>👥 Create Staff Account</strong></summary>
-        <form action="{{ url_for('add_staff') }}"
-              method="POST" class="form-grid spaced">
+        <summary><strong>Create Staff Account</strong></summary>
+        <form method="POST" action="{{ url_for('add_staff') }}"
+              class="form-grid section-space">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div>
-                <label>Staff Username</label>
+                <label>Username</label>
                 <input name="username" required>
             </div>
             <div>
-                <label>Temporary Password (12+ characters)</label>
+                <label>Password (12+ characters)</label>
                 <input name="password" type="password" minlength="12" required>
             </div>
             <button class="btn" type="submit">Create Staff</button>
@@ -186,18 +182,9 @@
     {% endif %}
 
     <section class="card">
-        <div class="section-heading">
-            <div>
-                <h3>📋 Product Inventory</h3>
-                <p class="muted">Manage quantities, record sales, and track stock.</p>
-            </div>
-            <span class="pill">{{ products|length }} products shown</span>
-        </div>
-
-        <form method="GET" action="{{ url_for('index') }}" class="filters">
-            <input name="q" value="{{ search }}"
-                   placeholder="Search products...">
-
+        <h3>Product Inventory</h3>
+        <form method="GET" class="filters">
+            <input name="q" value="{{ search }}" placeholder="Search products">
             <select name="category">
                 <option value="">All Categories</option>
                 {% for category in categories %}
@@ -207,23 +194,12 @@
                     </option>
                 {% endfor %}
             </select>
-
             <select name="status">
                 <option value="">All Stock Statuses</option>
-                <option value="healthy"
-                    {% if status_filter == 'healthy' %}selected{% endif %}>
-                    Healthy
-                </option>
-                <option value="low"
-                    {% if status_filter == 'low' %}selected{% endif %}>
-                    Low Stock
-                </option>
-                <option value="out"
-                    {% if status_filter == 'out' %}selected{% endif %}>
-                    Out of Stock
-                </option>
+                <option value="healthy" {% if status_filter == 'healthy' %}selected{% endif %}>Healthy</option>
+                <option value="low" {% if status_filter == 'low' %}selected{% endif %}>Low Stock</option>
+                <option value="out" {% if status_filter == 'out' %}selected{% endif %}>Out of Stock</option>
             </select>
-
             <button class="btn" type="submit">Filter</button>
             <a class="btn light" href="{{ url_for('index') }}">Reset</a>
         </form>
@@ -235,211 +211,216 @@
                         <th>Product</th>
                         <th>Category</th>
                         <th>Price</th>
-                        <th>Stock</th>
+                        <th>Quantity</th>
                         <th>Status</th>
                         <th>Reorder Suggestion</th>
+                        <th>Barcode / QR</th>
                         <th>Sale</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
-
                 <tbody>
                 {% for product in products %}
                     {% set qty = product.quantity %}
                     {% set limit = product.reorder_level %}
                     {% set reorder = [limit * 2 - qty, 0]|max %}
-
-                    <tr data-id="{{ product._id }}"
-                        data-limit="{{ limit }}"
-                        data-price="{{ product.price }}">
+                    <tr data-id="{{ product._id }}" data-limit="{{ limit }}">
                         <td>
                             <div class="product-cell">
-                                <img src="{{ product.image_url }}"
+                                <img class="product-image"
+                                     src="{{ product.image_url }}"
                                      alt="{{ product.name }}"
-                                     onerror="this.src='https://placehold.co/120x120?text=Product'">
+                                     onerror="this.onerror=null;this.src='https://placehold.co/120x120?text=Product'">
                                 <div>
                                     <strong>{{ product.name }}</strong>
-                                    <p class="muted small">
-                                        ₹{{ "%.2f"|format(product.price) }} / unit
-                                    </p>
+                                    <div class="muted small">
+                                        ₹{{ "%.2f"|format(product.price) }}
+                                    </div>
                                 </div>
                             </div>
                         </td>
-
                         <td>{{ product.category }}</td>
                         <td>₹{{ "%.2f"|format(product.price) }}</td>
-
                         <td>
                             <div class="quantity-control">
-                                <button type="button" class="qty-btn"
-                                        data-action="decrease">−</button>
+                                <button type="button" class="qty-btn" data-action="decrease">−</button>
                                 <strong class="qty-number">{{ qty }}</strong>
-                                <button type="button" class="qty-btn"
-                                        data-action="increase">+</button>
+                                <button type="button" class="qty-btn" data-action="increase">+</button>
                             </div>
                         </td>
-
                         <td>
-                            <span class="status-pill
-                                {{ 'out' if qty == 0 else 'low' if qty <= limit else 'healthy' }}">
-                                {{ 'Out of Stock' if qty == 0 else
-                                   'Low Stock' if qty <= limit else 'Healthy' }}
+                            <span class="status-pill {{ 'out' if qty == 0 else 'low' if qty <= limit else 'healthy' }}">
+                                {{ 'Out of Stock' if qty == 0 else 'Low Stock' if qty <= limit else 'Healthy' }}
                             </span>
                         </td>
-
-                        <td>
-                            <span class="reorder-text">
-                                {{ 'Order ' ~ reorder ~ ' units'
-                                   if qty <= limit else 'No reorder needed' }}
-                            </span>
+                        <td class="reorder-text">
+                            {{ 'Order ' ~ reorder ~ ' units' if qty <= limit else 'No reorder needed' }}
                         </td>
-
                         <td>
-                            <button class="btn small-btn sell-btn"
-                                    type="button"
-                                    {% if qty == 0 %}disabled{% endif %}>
-                                Sell 1
-                            </button>
+                            <div class="codes">
+                                <a href="{{ url_for('qr_code', product_id=product._id) }}"
+                                   target="_blank" title="Open QR code">
+                                    <img src="{{ url_for('qr_code', product_id=product._id) }}"
+                                         alt="QR code" class="code-image">
+                                </a>
+                                <a href="{{ url_for('barcode_image', product_id=product._id) }}"
+                                   target="_blank" title="Open barcode">
+                                    <img src="{{ url_for('barcode_image', product_id=product._id) }}"
+                                         alt="Barcode" class="barcode-image">
+                                </a>
+                                <button type="button" class="btn light small-btn print-code">
+                                    Print
+                                </button>
+                            </div>
                         </td>
-
+                        <td>
+                            <button type="button" class="btn small-btn sell-btn"
+                                    {% if qty == 0 %}disabled{% endif %}>Sell 1</button>
+                        </td>
                         <td>
                             <div class="action-group">
                                 <a class="btn light small-btn"
-                                   href="{{ url_for('edit_product', product_id=product._id) }}">
-                                    Edit
-                                </a>
-
+                                   href="{{ url_for('edit_product', product_id=product._id) }}">Edit</a>
                                 {% if current_role == 'admin' %}
                                 <form method="POST"
                                       action="{{ url_for('delete_product', product_id=product._id) }}"
                                       onsubmit="return confirm('Delete this product?')">
-                                    <input type="hidden" name="csrf_token"
-                                           value="{{ csrf_token }}">
-                                    <button class="btn danger small-btn"
-                                            type="submit">Delete</button>
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="btn danger small-btn" type="submit">Delete</button>
                                 </form>
                                 {% endif %}
                             </div>
                         </td>
                     </tr>
                 {% else %}
-                    <tr>
-                        <td colspan="8" class="empty">
-                            No products found.
-                        </td>
-                    </tr>
+                    <tr><td colspan="9" class="empty">No products found.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
     </section>
 
-    <footer class="footer">
-        Stockly · Flask + MongoDB Atlas · Inventory Management
-    </footer>
+    <footer class="footer">Stockly · Flask + MongoDB Atlas</footer>
 </div>
 
 <div id="toast" class="toast" hidden></div>
 
 <script>
-    const csrfToken = {{ csrf_token|tojson }};
-    const toast = document.getElementById("toast");
-    let toastTimeout;
+const csrfToken = {{ csrf_token|tojson }};
+const toast = document.getElementById("toast");
+let toastTimer;
 
-    function showToast(message, error = false) {
-        toast.textContent = message;
-        toast.className = error ? "toast error" : "toast";
-        toast.hidden = false;
-        clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => toast.hidden = true, 2800);
+function showToast(message, error = false) {
+    toast.textContent = message;
+    toast.className = error ? "toast error" : "toast";
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.hidden = true, 2800);
+}
+
+function updateRow(row, quantity) {
+    const limit = Number(row.dataset.limit);
+    row.querySelector(".qty-number").textContent = quantity;
+
+    const status = row.querySelector(".status-pill");
+    status.className = "status-pill";
+
+    if (quantity === 0) {
+        status.classList.add("out");
+        status.textContent = "Out of Stock";
+    } else if (quantity <= limit) {
+        status.classList.add("low");
+        status.textContent = "Low Stock";
+    } else {
+        status.classList.add("healthy");
+        status.textContent = "Healthy";
     }
 
-    function updateRow(row, quantity) {
-        const limit = Number(row.dataset.limit);
-        row.querySelector(".qty-number").textContent = quantity;
+    row.querySelector(".reorder-text").textContent =
+        quantity <= limit
+            ? `Order ${Math.max(0, limit * 2 - quantity)} units`
+            : "No reorder needed";
 
-        const status = row.querySelector(".status-pill");
-        status.className = "status-pill";
+    row.querySelector(".sell-btn").disabled = quantity === 0;
+}
 
-        if (quantity === 0) {
-            status.classList.add("out");
-            status.textContent = "Out of Stock";
-        } else if (quantity <= limit) {
-            status.classList.add("low");
-            status.textContent = "Low Stock";
-        } else {
-            status.classList.add("healthy");
-            status.textContent = "Healthy";
-        }
+async function updateStock(row, action) {
+    const id = row.dataset.id;
+    const url = action === "sell"
+        ? `/sell/${encodeURIComponent(id)}`
+        : `/quantity/${encodeURIComponent(id)}/${action}`;
 
-        const reorder = Math.max(0, limit * 2 - quantity);
-        row.querySelector(".reorder-text").textContent =
-            quantity <= limit
-                ? `Order ${reorder} units`
-                : "No reorder needed";
+    const buttons = row.querySelectorAll("button");
+    buttons.forEach(button => button.disabled = true);
 
-        row.querySelector(".sell-btn").disabled = quantity === 0;
-    }
+    try {
+        const body = new URLSearchParams();
+        body.set("csrf_token", csrfToken);
+        body.set(action === "sell" ? "quantity" : "amount", "1");
 
-    async function updateStock(row, action) {
-        const id = row.dataset.id;
-        const url = action === "sell"
-            ? `/sell/${encodeURIComponent(id)}`
-            : `/quantity/${encodeURIComponent(id)}/${action}`;
-
-        const buttons = row.querySelectorAll("button");
-        buttons.forEach(btn => btn.disabled = true);
-
-        try {
-            const body = new URLSearchParams();
-            body.set("csrf_token", csrfToken);
-            if (action === "sell") {
-                body.set("quantity", "1");
-            } else {
-                body.set("amount", "1");
-            }
-
-            const response = await fetch(url, {
-                method: "POST",
-                headers: {
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-CSRF-Token": csrfToken,
-                },
-                body,
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                showToast(data.message || "Update failed", true);
-                return;
-            }
-
-            updateRow(row, Number(data.quantity));
-            showToast(data.message);
-
-            // Refresh dashboard totals on the next page visit.
-            // The product row updates immediately without page reload.
-        } catch (error) {
-            showToast("Network error. Please try again.", true);
-        } finally {
-            buttons.forEach(btn => btn.disabled = false);
-            row.querySelector(".sell-btn").disabled =
-                Number(row.querySelector(".qty-number").textContent) === 0;
-        }
-    }
-
-    document.querySelectorAll("tbody tr[data-id]").forEach(row => {
-        row.querySelectorAll(".qty-btn").forEach(button => {
-            button.addEventListener("click", () => {
-                updateStock(row, button.dataset.action);
-            });
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRF-Token": csrfToken
+            },
+            body
         });
 
-        row.querySelector(".sell-btn").addEventListener("click", () => {
-            updateStock(row, "sell");
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showToast(data.message || "Update failed", true);
+            return;
+        }
+
+        updateRow(row, Number(data.quantity));
+        showToast(data.message);
+    } catch (error) {
+        showToast("Network error. Please try again.", true);
+    } finally {
+        buttons.forEach(button => button.disabled = false);
+        row.querySelector(".sell-btn").disabled =
+            Number(row.querySelector(".qty-number").textContent) === 0;
+    }
+}
+
+document.querySelectorAll("tbody tr[data-id]").forEach(row => {
+    row.querySelectorAll(".qty-btn").forEach(button => {
+        button.addEventListener("click", () => {
+            updateStock(row, button.dataset.action);
         });
     });
+
+    row.querySelector(".sell-btn").addEventListener("click", () => {
+        updateStock(row, "sell");
+    });
+
+    row.querySelector(".print-code").addEventListener("click", () => {
+        const qr = row.querySelector(".code-image").src;
+        const barcode = row.querySelector(".barcode-image").src;
+        const name = row.querySelector(".product-cell strong").textContent;
+
+        const popup = window.open("", "_blank", "width=600,height=500");
+        if (!popup) {
+            showToast("Allow pop-ups to print product codes.", true);
+            return;
+        }
+
+        popup.document.write(`
+            <!DOCTYPE html><html><head><title>Product Codes</title>
+            <style>
+                body{font-family:Arial;text-align:center;padding:25px}
+                img{max-width:95%;height:auto;margin:12px}
+            </style></head><body>
+            <h2>${name.replace(/[&<>"]/g, "")}</h2>
+            <p>QR Code</p><img src="${qr}">
+            <p>Barcode</p><img src="${barcode}">
+            <script>window.onload=()=>window.print();<\/script>
+            </body></html>
+        `);
+        popup.document.close();
+    });
+});
 </script>
 </body>
 </html>

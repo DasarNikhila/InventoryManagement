@@ -11,27 +11,24 @@
     <div class="login-card">
         <div class="logo">S</div>
         <h1>Welcome to Stockly</h1>
-        <p class="muted">Sign in to manage your inventory</p>
+        <p class="muted">Sign in to manage your inventory.</p>
 
-        {% with messages = get_flashed_messages() %}
-            {% for message in messages %}
-                <div class="alert error">{{ message }}</div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="alert {{ category }}">{{ message }}</div>
             {% endfor %}
         {% endwith %}
 
-        <form method="POST" action="{{ url_for('login') }}">
+        <form method="POST">
             <label>Username</label>
-            <input name="username" required autocomplete="username"
-                   placeholder="Enter username">
+            <input name="username" required autocomplete="username">
 
             <label>Password</label>
             <input name="password" type="password" required
-                   autocomplete="current-password"
-                   placeholder="Enter password">
+                   autocomplete="current-password">
 
             <button class="btn full" type="submit">Sign In</button>
         </form>
-        <p class="muted small">Inventory management made simple.</p>
     </div>
 </body>
 </html>
